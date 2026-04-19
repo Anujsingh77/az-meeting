@@ -25,23 +25,28 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // IMPORTANT: Do not use getUser() in middleware — it makes an external
+  // request and can fail silently. Use getSession() instead for routing.
+  const { data: { session } } = await supabase.auth.getSession();
 
   const pathname = request.nextUrl.pathname;
+
   const isPublic =
     pathname.startsWith("/auth") ||
     pathname === "/" ||
-    pathname.startsWith("/api/auth");
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname.includes(".");
 
-  if (!user && !isPublic) {
+  // Not logged in and trying to access protected page
+  if (!session && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname.startsWith("/auth/login")) {
+  // Logged in and on login page — go to dashboard
+  if (session && pathname === "/auth/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
