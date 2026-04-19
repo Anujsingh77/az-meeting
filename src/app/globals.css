@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 30% 97%;
+    --foreground: 240 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 20% 12%;
+    --primary: 248 78% 61%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 248 30% 95%;
+    --secondary-foreground: 248 40% 40%;
+    --muted: 40 20% 94%;
+    --muted-foreground: 240 10% 55%;
+    --accent: 248 78% 61%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 15% 88%;
+    --input: 40 15% 88%;
+    --ring: 248 78% 61%;
+    --radius: 0.625rem;
+    --surface: 40 20% 95%;
+    --surface-hover: 40 15% 91%;
+    --surface-active: 248 30% 93%;
+    --green: 160 84% 39%;
+    --red: 0 72% 51%;
+    --amber: 38 92% 50%;
+    --cyan: 199 89% 48%;
+  }
+
+  .dark {
+    --background: 230 25% 7%;
+    --foreground: 230 20% 92%;
+    --card: 230 22% 11%;
+    --card-foreground: 230 20% 92%;
+    --popover: 230 22% 11%;
+    --popover-foreground: 230 20% 92%;
+    --primary: 248 78% 68%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 20% 18%;
+    --secondary-foreground: 230 15% 75%;
+    --muted: 230 20% 16%;
+    --muted-foreground: 230 15% 50%;
+    --accent: 248 78% 68%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 18% 20%;
+    --input: 230 18% 20%;
+    --ring: 248 78% 68%;
+    --surface: 230 20% 15%;
+    --surface-hover: 230 18% 19%;
+    --surface-active: 248 25% 22%;
+    --green: 160 72% 45%;
+    --red: 0 72% 60%;
+    --amber: 38 85% 55%;
+    --cyan: 199 80% 55%;
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background-color: hsl(var(--border)); border-radius: 4px; }
+  * { -webkit-tap-highlight-color: transparent; }
+  html { scrollbar-gutter: stable; }
+}
+
+@layer components {
+  .accent-gradient {
+    background: linear-gradient(135deg, #5b50e8, #8b7ff5);
+  }
+  .accent-gradient-text {
+    background: linear-gradient(135deg, #5b50e8, #8b7ff5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .card-hover {
+    transition: all 0.2s;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    border-color: rgba(91,80,232,0.3);
+  }
+  .btn-base {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: all 0.15s;
+    outline: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  .btn-base:disabled {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .btn-base:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+  }
+  .input-base {
+    width: 100%;
+    background-color: hsl(var(--muted));
+    border: 1.5px solid hsl(var(--border));
+    border-radius: 0.75rem;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    color: hsl(var(--foreground));
+    outline: none;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .input-base::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+  .input-base:focus {
+    border-color: hsl(var(--accent));
+    background-color: hsl(var(--card));
+    box-shadow: 0 0 0 3px rgba(91,80,232,0.12);
+  }
+}
+
+@keyframes speak-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(5,150,105,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(5,150,105,0); }
+}
+.speaking-ring {
+  animation: speak-pulse 1.5s ease-in-out infinite;
+  border-color: hsl(var(--green)) !important;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pulse2 {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.page-enter { animation: fadeUp 0.35s ease both; }
+.animate-pulse2 { animation: pulse2 1.4s ease-in-out infinite; }
