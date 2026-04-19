@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Edit, Plus, Download, Key, Trash2, Star, Globe, Bell, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -109,7 +110,7 @@ export default function ProfilePage() {
           <div className="relative flex-shrink-0">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadAvatar(e.target.files[0]); }} />
             {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="avatar" className="w-20 h-20 rounded-full object-cover" />
+              <Image src={user.avatar_url} alt="avatar" width={80} height={80} className="w-20 h-20 rounded-full object-cover" />
             ) : (
               <div className={cn("w-20 h-20 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-2xl font-black", color)}>
                 {initials}
