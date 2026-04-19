@@ -10,26 +10,36 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      // Ensure profile row exists
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (user) {
+        // Check if profile already exists
         const { data: existing } = await supabase
           .from("profiles")
           .select("id")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
         if (!existing) {
-          await supabase.from("profiles").insert({
-            id: user.id,
-            email: user.email!,
-            full_name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
-            avatar_url: user.user_metadata?.avatar_url ?? null,
-            native_language: "en",
-            preferred_language: "en",
-            languages: ["en"],
-            plan: "free",
-          });
+          // Use upsert to avoid type conflicts with insert
+          await supabase.from("profiles").upsert(
+            {
+              id: user.id,
+              email: user.email ?? "",
+              full_name:
+                user.user_metadata?.full_name ??
+                user.user_metadata?.name ??
+                null,
+              avatar_url: user.user_metadata?.avatar_url ?? null,
+              native_language: "en",
+              preferred_language: "en",
+              languages: ["en"],
+              plan: "free" as const,
+            },
+            { onConflict: "id" }
+          );
         }
       }
       return NextResponse.redirect(`${origin}${next}`);
