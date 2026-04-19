@@ -11,16 +11,10 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        // Cast to any to bypass strict generated types —
-        // the actual DB schema has this table and columns
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const db = supabase as any;
-
         const { data: existing } = await db
           .from("profiles")
           .select("id")
@@ -31,10 +25,7 @@ export async function GET(request: Request) {
           await db.from("profiles").insert({
             id: user.id,
             email: user.email ?? "",
-            full_name:
-              user.user_metadata?.full_name ??
-              user.user_metadata?.name ??
-              null,
+            full_name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
             avatar_url: user.user_metadata?.avatar_url ?? null,
             native_language: "en",
             preferred_language: "en",
@@ -43,10 +34,8 @@ export async function GET(request: Request) {
           });
         }
       }
-
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
-
   return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`);
 }

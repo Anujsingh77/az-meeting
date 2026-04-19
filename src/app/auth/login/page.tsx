@@ -63,7 +63,6 @@ export default function LoginPage() {
     setSocialLoading("google");
     const { error } = await signInWithGoogle();
     if (error) { toast.error(error.message); setSocialLoading(null); }
-    // redirect handled by Supabase OAuth flow
   };
 
   const handleGithub = async () => {
@@ -74,7 +73,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background blobs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 -left-40 w-96 h-96 bg-accent/8 rounded-full blur-3xl" />
         <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-violet-500/8 rounded-full blur-3xl" />
@@ -86,7 +84,6 @@ export default function LoginPage() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="bg-card border border-border rounded-3xl p-8 w-full max-w-[420px] shadow-xl relative z-10"
       >
-        {/* Logo */}
         <div className="flex items-center gap-3 justify-center mb-8">
           <div className="w-10 h-10 rounded-2xl accent-gradient flex items-center justify-center text-white font-black text-sm">
             AZ
@@ -104,10 +101,9 @@ export default function LoginPage() {
             ? "Sign in to start multilingual meetings"
             : mode === "signup"
             ? "Free forever. No credit card needed."
-            : "Enter your email and we'll send a reset link"}
+            : "Enter your email and we will send a reset link"}
         </p>
 
-        {/* Social buttons */}
         {mode !== "forgot" && (
           <>
             <div className="flex flex-col gap-3 mb-5">
@@ -210,21 +206,29 @@ export default function LoginPage() {
           )}
 
           <Button type="submit" size="lg" loading={loading} className="w-full mt-2">
-            {mode === "signin" ? "Sign in →" : mode === "signup" ? "Create account →" : "Send reset link →"}
+            {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
           </Button>
         </form>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
           {mode === "signin" ? (
-            <>Don't have an account?{" "}
-              <button onClick={() => setMode("signup")} className="text-accent font-semibold hover:underline">Sign up free</button>
+            <>
+              Don&apos;t have an account?{" "}
+              <button onClick={() => setMode("signup")} className="text-accent font-semibold hover:underline">
+                Sign up free
+              </button>
             </>
           ) : mode === "signup" ? (
-            <>Already have an account?{" "}
-              <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">Sign in</button>
+            <>
+              Already have an account?{" "}
+              <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">
+                Sign in
+              </button>
             </>
           ) : (
-            <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">← Back to sign in</button>
+            <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">
+              Back to sign in
+            </button>
           )}
         </p>
 

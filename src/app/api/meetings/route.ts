@@ -7,7 +7,6 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
   const { data, error } = await db
     .from("meetings")
@@ -26,9 +25,8 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const code = generateMeetingCode();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
+
   const { data, error } = await db.from("meetings").insert({
     title: body.title ?? "Untitled meeting",
     host_id: user.id,
@@ -50,9 +48,8 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json();
   const { id, ...updates } = body;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
+
   const { data, error } = await db
     .from("meetings")
     .update(updates)
@@ -72,9 +69,8 @@ export async function DELETE(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
+
   const { error } = await db
     .from("meetings")
     .delete()

@@ -4,8 +4,9 @@ import * as React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn, getInitials, avatarColor } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import NextImage from "next/image";
 
-// ─── Button ─────────────────────────────────────────────────────────────────
+// ─── Button ──────────────────────────────────────────────────────────────────
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "ghost" | "danger" | "outline";
   size?: "sm" | "md" | "lg" | "icon";
@@ -67,7 +68,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className={cn(
             "input-base",
             icon && "pl-10",
-            error && "border-red-500 focus:border-red-500 focus:ring-red-500/20",
+            error && "border-red-500 focus:border-red-500",
             className
           )}
           {...props}
@@ -134,9 +135,7 @@ export function SwitchRow({ label, description, checked, onCheckedChange }: Swit
           checked ? "accent-gradient" : "bg-border"
         )}
       >
-        <SwitchPrimitive.Thumb
-          className="block w-[18px] h-[18px] bg-white rounded-full shadow transition-transform duration-200 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[22px]"
-        />
+        <SwitchPrimitive.Thumb className="block w-[18px] h-[18px] bg-white rounded-full shadow transition-transform duration-200 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[22px]" />
       </SwitchPrimitive.Root>
     </div>
   );
@@ -180,12 +179,22 @@ interface AvatarProps {
 }
 
 export function Avatar({ name, src, size = "md", className }: AvatarProps) {
-  const sizes = { xs: "w-6 h-6 text-[9px]", sm: "w-8 h-8 text-xs", md: "w-10 h-10 text-sm", lg: "w-14 h-14 text-lg", xl: "w-20 h-20 text-2xl" };
+  const sizes = {
+    xs: "w-6 h-6 text-[9px]",
+    sm: "w-8 h-8 text-xs",
+    md: "w-10 h-10 text-sm",
+    lg: "w-14 h-14 text-lg",
+    xl: "w-20 h-20 text-2xl",
+  };
+  const px = { xs: 24, sm: 32, md: 40, lg: 56, xl: 80 };
+
   if (src) {
     return (
-      <img
+      <NextImage
         src={src}
         alt={name}
+        width={px[size]}
+        height={px[size]}
         className={cn("rounded-full object-cover flex-shrink-0", sizes[size], className)}
       />
     );
@@ -209,11 +218,13 @@ interface CardProps {
   children: React.ReactNode;
   className?: string;
   hover?: boolean;
+  onClick?: () => void;
 }
 
-export function Card({ children, className, hover }: CardProps) {
+export function Card({ children, className, hover, onClick }: CardProps) {
   return (
     <div
+      onClick={onClick}
       className={cn(
         "bg-card border border-border rounded-2xl shadow-sm",
         hover && "card-hover cursor-pointer",
