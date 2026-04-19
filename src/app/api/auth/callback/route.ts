@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
 
   if (code) {
     const supabase = await createClient();
@@ -34,8 +33,11 @@ export async function GET(request: Request) {
           });
         }
       }
-      return NextResponse.redirect(`${origin}${next}`);
+
+      // Always redirect to dashboard after successful OAuth
+      return NextResponse.redirect(`${origin}/dashboard`);
     }
   }
+
   return NextResponse.redirect(`${origin}/auth/login?error=auth_failed`);
 }

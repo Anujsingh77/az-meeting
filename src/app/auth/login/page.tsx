@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Mail, Lock, User, Eye, EyeOff, Globe } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { createClient } from "@/lib/supabase/client";
 import { Button, Input } from "@/components/ui";
 import toast from "react-hot-toast";
 
@@ -12,7 +12,7 @@ type Mode = "signin" | "signup" | "forgot";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithGithub, resetPassword } = useAuth();
+  const supabase = createClient();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -22,6 +22,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<"google" | "github" | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // If already logged in, go to dashboard
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/dashboard");
+    });
+  }, []);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -36,24 +43,67 @@ export default function LoginPage() {
     return Object.keys(e).length === 0;
   };
 
+  const ensureProfile = async (userId: string, userEmail: string, fullName: string | null) => {
+    const db = supabase as any;
+    const { data } = await db.from("profiles").select("id").eq("id", userId).maybeSingle();
+    if (!data) {
+      await db.from("profiles").insert({
+        id: userId,
+        email: userEmail,
+        full_name: fullName,
+        native_language: "en",
+        preferred_language: "en",
+        languages: ["en"],
+        plan: "free",
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
     try {
       if (mode === "forgot") {
-        const { error } = await resetPassword(email);
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/reset-password`,
+        });
         if (error) toast.error(error.message);
-        else { toast.success("Reset link sent — check your inbox!"); setMode("signin"); }
+        else { toast.success("Reset link sent! Check your inbox."); setMode("signin"); }
+
       } else if (mode === "signup") {
-        const { error } = await signUpWithEmail(email, password, name);
-        if (error) toast.error(error.message);
-        else { toast.success("Account created! Check your email to confirm."); setMode("signin"); }
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: name } },
+        });
+        if (error) {
+          toast.error(error.message);
+        } else if (data.user) {
+          await ensureProfile(data.user.id, email, name);
+          toast.success("Account created! Signing you in...");
+          // Auto sign in after signup
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+          if (!signInError) {
+            router.replace("/dashboard");
+          } else {
+            setMode("signin");
+            toast("Please sign in with your new account");
+          }
+        }
+
       } else {
-        const { error } = await signInWithEmail(email, password);
-        if (error) toast.error(error.message);
-        else { toast.success("Welcome back!"); router.push("/dashboard"); }
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          toast.error(error.message);
+        } else if (data.user) {
+          await ensureProfile(data.user.id, data.user.email!, data.user.user_metadata?.full_name ?? null);
+          toast.success("Welcome back!");
+          router.replace("/dashboard");
+        }
       }
+    } catch (err: any) {
+      toast.error(err.message ?? "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -61,13 +111,22 @@ export default function LoginPage() {
 
   const handleGoogle = async () => {
     setSocialLoading("google");
-    const { error } = await signInWithGoogle();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback`,
+        queryParams: { access_type: "offline", prompt: "consent" },
+      },
+    });
     if (error) { toast.error(error.message); setSocialLoading(null); }
   };
 
   const handleGithub = async () => {
     setSocialLoading("github");
-    const { error } = await signInWithGithub();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${window.location.origin}/api/auth/callback` },
+    });
     if (error) { toast.error(error.message); setSocialLoading(null); }
   };
 
@@ -81,7 +140,7 @@ export default function LoginPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
+        transition={{ duration: 0.4 }}
         className="bg-card border border-border rounded-3xl p-8 w-full max-w-[420px] shadow-xl relative z-10"
       >
         <div className="flex items-center gap-3 justify-center mb-8">
@@ -110,10 +169,10 @@ export default function LoginPage() {
               <button
                 onClick={handleGoogle}
                 disabled={!!socialLoading || loading}
-                className="flex items-center justify-center gap-3 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm font-medium text-foreground hover:border-accent/50 hover:bg-muted/80 transition-all disabled:opacity-60"
+                className="flex items-center justify-center gap-3 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm font-medium text-foreground hover:border-accent/50 transition-all disabled:opacity-60"
               >
                 {socialLoading === "google" ? (
-                  <div className="w-[18px] h-[18px] border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <svg width="18" height="18" viewBox="0 0 18 18">
                     <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
@@ -127,10 +186,10 @@ export default function LoginPage() {
               <button
                 onClick={handleGithub}
                 disabled={!!socialLoading || loading}
-                className="flex items-center justify-center gap-3 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm font-medium text-foreground hover:border-accent/50 hover:bg-muted/80 transition-all disabled:opacity-60"
+                className="flex items-center justify-center gap-3 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm font-medium text-foreground hover:border-accent/50 transition-all disabled:opacity-60"
               >
                 {socialLoading === "github" ? (
-                  <div className="w-[18px] h-[18px] border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
@@ -139,7 +198,6 @@ export default function LoginPage() {
                 Continue with GitHub
               </button>
             </div>
-
             <div className="flex items-center gap-3 mb-5">
               <div className="flex-1 h-px bg-border" />
               <span className="text-xs text-muted-foreground">or with email</span>
@@ -195,11 +253,7 @@ export default function LoginPage() {
 
           {mode === "signin" && (
             <div className="text-right">
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                className="text-xs text-accent hover:underline"
-              >
+              <button type="button" onClick={() => setMode("forgot")} className="text-xs text-accent hover:underline">
                 Forgot password?
               </button>
             </div>
@@ -213,14 +267,14 @@ export default function LoginPage() {
         <p className="text-center text-xs text-muted-foreground mt-6">
           {mode === "signin" ? (
             <>
-              Don&apos;t have an account?{" "}
+              No account?{" "}
               <button onClick={() => setMode("signup")} className="text-accent font-semibold hover:underline">
                 Sign up free
               </button>
             </>
           ) : mode === "signup" ? (
             <>
-              Already have an account?{" "}
+              Have an account?{" "}
               <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">
                 Sign in
               </button>
