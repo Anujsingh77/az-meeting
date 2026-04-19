@@ -14,7 +14,8 @@ export function useAuth() {
 
   const fetchProfile = useCallback(
     async (userId: string) => {
-      const { data } = await supabase
+      const db = supabase as any;
+      const { data } = await db
         .from("profiles")
         .select("*")
         .eq("id", userId)
@@ -31,9 +32,7 @@ export function useAuth() {
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -65,18 +64,11 @@ export function useAuth() {
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     return { data, error };
   };
 
-  const signUpWithEmail = async (
-    email: string,
-    password: string,
-    fullName: string
-  ) => {
+  const signUpWithEmail = async (email: string, password: string, fullName: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -98,14 +90,9 @@ export function useAuth() {
   };
 
   return {
-    user,
-    session,
-    loading,
-    signInWithGoogle,
-    signInWithGithub,
-    signInWithEmail,
-    signUpWithEmail,
-    signOut,
-    resetPassword,
+    user, session, loading,
+    signInWithGoogle, signInWithGithub,
+    signInWithEmail, signUpWithEmail,
+    signOut, resetPassword,
   };
 }
