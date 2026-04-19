@@ -52,7 +52,8 @@ export default function SchedulePage() {
     setLoading(true);
     try {
       const code = generateMeetingCode();
-      const { error } = await supabase.from("meetings").insert({
+      const db = supabase as any;
+      const { error } = await db.from("meetings").insert({
         title: form.title,
         host_id: user?.id ?? "anon",
         code,

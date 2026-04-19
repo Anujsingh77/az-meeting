@@ -73,7 +73,8 @@ export default function ProfilePage() {
     const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
     if (upErr) { toast.error("Upload failed"); return; }
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-    await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
+    const db1 = supabase as any;
+    await db1.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
     setUser({ ...user, avatar_url: data.publicUrl });
     toast.success("Avatar updated!");
   };
@@ -90,7 +91,7 @@ export default function ProfilePage() {
   const deleteAccount = async () => {
     if (deleteConfirm !== "DELETE") { toast.error('Type "DELETE" to confirm'); return; }
     try {
-      if (user) await supabase.from("profiles").delete().eq("id", user.id);
+      if (user) { const db2 = supabase as any; await db2.from("profiles").delete().eq("id", user.id); }
       await supabase.auth.signOut();
       window.location.href = "/auth/login";
     } catch {

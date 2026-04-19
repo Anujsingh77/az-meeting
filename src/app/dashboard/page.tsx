@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Video, Calendar, Users, Globe, ArrowRight, Plus,
-  Clock, Zap, Shield, Star, TrendingUp, Activity,
+  Clock, TrendingUp,
 } from "lucide-react";
-import { Button, Card, Badge, StatCell, Avatar } from "@/components/ui";
+import { Button, Card, StatCell } from "@/components/ui";
 import { useAppStore } from "@/store/app";
 import { generateMeetingCode } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -21,13 +21,12 @@ const UPCOMING = [
 
 const FEATURES = [
   { icon: Globe, title: "AI voice dubbing", desc: "Everyone hears you in their language in real time — zero delay.", color: "from-violet-500 to-purple-600" },
-  { icon: Zap, title: "Live captions", desc: "97% accurate subtitles auto-translated as you speak.", color: "from-blue-500 to-cyan-500" },
-  { icon: Shield, title: "End-to-end encrypted", desc: "Zero data retention. Your conversations stay private.", color: "from-green-500 to-emerald-500" },
+  { icon: Clock, title: "Live captions", desc: "97% accurate subtitles auto-translated as you speak.", color: "from-blue-500 to-cyan-500" },
+  { icon: Users, title: "End-to-end encrypted", desc: "Zero data retention. Your conversations stay private.", color: "from-green-500 to-emerald-500" },
 ];
 
 export default function DashboardPage() {
   const router = useRouter();
-  const supabase = createClient();
   const user = useAppStore((s) => s.user);
   const setActiveMeeting = useAppStore((s) => s.setActiveMeeting);
   const [startingMeeting, setStartingMeeting] = useState(false);
@@ -36,8 +35,10 @@ export default function DashboardPage() {
   const startInstantMeeting = async () => {
     setStartingMeeting(true);
     try {
+      const supabase = createClient();
+      const db = supabase as any;
       const code = generateMeetingCode();
-      const { data, error } = await supabase.from("meetings").insert({
+      const { data, error } = await db.from("meetings").insert({
         title: "Instant meeting",
         host_id: user?.id ?? "anonymous",
         code,
@@ -48,7 +49,7 @@ export default function DashboardPage() {
       if (error) throw error;
       setActiveMeeting(data.id, code);
       router.push(`/meeting?code=${code}`);
-    } catch (e) {
+    } catch {
       toast.error("Failed to create meeting");
     } finally {
       setStartingMeeting(false);
@@ -84,7 +85,6 @@ export default function DashboardPage() {
             </p>
           </motion.div>
 
-          {/* CTA row */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -99,12 +99,12 @@ export default function DashboardPage() {
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && joinMeeting(joinCode)}
-                placeholder="Enter code  e.g. X7K-2P9"
+                placeholder="Enter code e.g. X7K-2P9"
                 className="input-base w-48 h-11"
                 maxLength={12}
               />
               <Button variant="ghost" size="lg" onClick={() => joinMeeting(joinCode)}>
-                Join →
+                Join
               </Button>
             </div>
           </motion.div>
@@ -134,7 +134,7 @@ export default function DashboardPage() {
             </Button>
           </div>
           <div className="space-y-3">
-            {UPCOMING.map((m, i) => (
+            {UPCOMING.map((m) => (
               <Card key={m.id} hover className="p-4 flex items-center gap-4" onClick={() => joinMeeting(m.code)}>
                 <div className="w-14 h-14 accent-gradient rounded-xl flex flex-col items-center justify-center text-white flex-shrink-0">
                   <div className="text-base font-black leading-none">{m.time}</div>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
             {[
               { icon: Plus, label: "New meeting", action: startInstantMeeting, accent: true },
               { icon: Calendar, label: "Schedule", action: () => router.push("/schedule") },
-              { icon: Users, label: "Invite team", action: () => toast.success("Copied invite link!") },
+              { icon: Users, label: "Invite team", action: () => { navigator.clipboard.writeText(window.location.origin); toast.success("Copied invite link!"); } },
               { icon: TrendingUp, label: "Analytics", action: () => router.push("/profile") },
             ].map(({ icon: Icon, label, action, accent }) => (
               <button

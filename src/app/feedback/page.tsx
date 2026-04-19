@@ -52,7 +52,8 @@ export default function FeedbackPage() {
     if (!message.trim()) { toast.error("Please describe your feedback"); return; }
     setSubmitting(true);
     try {
-      const { error } = await supabase.from("feedback").insert({
+      const db = supabase as any;
+      const { error } = await db.from("feedback").insert({
         user_id: anonymous ? null : user?.id ?? null,
         type: fbType,
         rating: rating || null,
