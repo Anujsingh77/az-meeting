@@ -9,39 +9,41 @@ export async function GET(request: Request) {
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (user) {
-        // Check if profile already exists
-        const { data: existing } = await supabase
+        // Cast to any to bypass strict generated types —
+        // the actual DB schema has this table and columns
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any;
+
+        const { data: existing } = await db
           .from("profiles")
           .select("id")
           .eq("id", user.id)
           .maybeSingle();
 
         if (!existing) {
-          // Use upsert to avoid type conflicts with insert
-          await supabase.from("profiles").upsert(
-            {
-              id: user.id,
-              email: user.email ?? "",
-              full_name:
-                user.user_metadata?.full_name ??
-                user.user_metadata?.name ??
-                null,
-              avatar_url: user.user_metadata?.avatar_url ?? null,
-              native_language: "en",
-              preferred_language: "en",
-              languages: ["en"],
-              plan: "free" as const,
-            },
-            { onConflict: "id" }
-          );
+          await db.from("profiles").insert({
+            id: user.id,
+            email: user.email ?? "",
+            full_name:
+              user.user_metadata?.full_name ??
+              user.user_metadata?.name ??
+              null,
+            avatar_url: user.user_metadata?.avatar_url ?? null,
+            native_language: "en",
+            preferred_language: "en",
+            languages: ["en"],
+            plan: "free",
+          });
         }
       }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

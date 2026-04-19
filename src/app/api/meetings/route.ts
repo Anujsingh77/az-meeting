@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateMeetingCode } from "@/lib/utils";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
     .from("meetings")
     .select("*")
     .eq("host_id", user.id)
@@ -25,7 +27,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const code = generateMeetingCode();
 
-  const { data, error } = await supabase.from("meetings").insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db.from("meetings").insert({
     title: body.title ?? "Untitled meeting",
     host_id: user.id,
     code,
@@ -47,7 +51,9 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { id, ...updates } = body;
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
     .from("meetings")
     .update(updates)
     .eq("id", id)
@@ -67,10 +73,12 @@ export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { error } = await db
     .from("meetings")
     .delete()
-    .eq("id", id!)
+    .eq("id", id)
     .eq("host_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

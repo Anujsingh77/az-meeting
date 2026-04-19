@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
-import Image from "next/image";
 import { cn, getInitials, avatarColor } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
@@ -184,11 +183,9 @@ export function Avatar({ name, src, size = "md", className }: AvatarProps) {
   const sizes = { xs: "w-6 h-6 text-[9px]", sm: "w-8 h-8 text-xs", md: "w-10 h-10 text-sm", lg: "w-14 h-14 text-lg", xl: "w-20 h-20 text-2xl" };
   if (src) {
     return (
-      <Image
+      <img
         src={src}
         alt={name}
-        width={80}
-        height={80}
         className={cn("rounded-full object-cover flex-shrink-0", sizes[size], className)}
       />
     );

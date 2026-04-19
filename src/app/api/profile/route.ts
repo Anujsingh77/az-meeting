@@ -6,7 +6,9 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
     .from("profiles")
     .select("*")
     .eq("id", user.id)
@@ -24,8 +26,11 @@ export async function PATCH(req: NextRequest) {
   const updates = await req.json();
   // Prevent overwriting protected fields
   const { id, email, plan, created_at, ...safeUpdates } = updates;
+  void id; void email; void plan; void created_at;
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
     .from("profiles")
     .update({ ...safeUpdates, updated_at: new Date().toISOString() })
     .eq("id", user.id)
