@@ -1,5 +1,4 @@
-import { AppShell } from "@/components/layout/AppShell";
-
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+// Meeting screen is full-screen — no sidebar/shell
+export default function MeetingLayout({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
