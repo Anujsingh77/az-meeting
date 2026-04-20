@@ -59,7 +59,7 @@ export default function DashboardPage() {
 
   const joinMeeting = (code: string) => {
     if (!code.trim()) { toast.error("Please enter a meeting code"); return; }
-    router.push(`/meeting?code=${code.trim().toUpperCase()}`);
+    router.push(`/join/${code.trim().toUpperCase()}`);
   };
 
   return (
