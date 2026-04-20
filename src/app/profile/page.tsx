@@ -13,8 +13,6 @@ import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 export default function ProfilePage() {
-  const supabase = createClient();
-  const db = supabase as any;
   const { user, setUser } = useAppStore();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -27,30 +25,29 @@ export default function ProfilePage() {
   });
   const [pwForm, setPwForm] = useState({ newPw: "", confirm: "" });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [notifs, setNotifs] = useState({
-    reminders: true, translation: true, chat: true, recording: false, digest: true,
-  });
-  const [prefs, setPrefs] = useState({
-    autoJoinDubbing: true, joinCameraOff: false, hdDefault: true, bgBlur: false, aiSummary: true,
-  });
+  const [notifs, setNotifs] = useState({ reminders: true, translation: true, chat: true, recording: false, digest: true });
+  const [prefs, setPrefs] = useState({ autoJoinDubbing: true, joinCameraOff: false, hdDefault: true, bgBlur: false, aiSummary: true });
 
   const saveProfile = async () => {
     if (!user) return;
     setSaving(true);
     try {
+      const supabase = createClient();
+      const db = supabase as any;
       const { error } = await db
         .from("profiles")
         .update({ full_name: form.full_name, job_title: form.job_title })
         .eq("id", user.id);
-      if (error) throw error;
+      if (error) throw new Error(error.message);
       setUser({ ...user, full_name: form.full_name, job_title: form.job_title });
       toast.success("Profile updated!");
       setEditOpen(false);
-    } catch {
-      toast.error("Failed to update profile");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to update profile");
     } finally {
       setSaving(false);
     }
@@ -61,8 +58,9 @@ export default function ProfilePage() {
     if (pwForm.newPw !== pwForm.confirm) { toast.error("Passwords do not match"); return; }
     setSaving(true);
     try {
+      const supabase = createClient();
       const { error } = await supabase.auth.updateUser({ password: pwForm.newPw });
-      if (error) throw error;
+      if (error) throw new Error(error.message);
       toast.success("Password changed!");
       setPwOpen(false);
       setPwForm({ newPw: "", confirm: "" });
@@ -75,16 +73,34 @@ export default function ProfilePage() {
 
   const uploadAvatar = async (file: File) => {
     if (!user) return;
-    const ext = file.name.split(".").pop();
-    const path = `${user.id}/avatar.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from("avatars")
-      .upload(path, file, { upsert: true });
-    if (upErr) { toast.error("Upload failed"); return; }
-    const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
-    await db.from("profiles").update({ avatar_url: urlData.publicUrl }).eq("id", user.id);
-    setUser({ ...user, avatar_url: urlData.publicUrl });
-    toast.success("Avatar updated!");
+    // Validate file
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return; }
+
+    setUploading(true);
+    try {
+      const supabase = createClient();
+      const db = supabase as any;
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `${user.id}/avatar.${ext}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, { upsert: true, contentType: file.type });
+
+      if (upErr) throw new Error(upErr.message);
+
+      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
+      const avatarUrl = urlData.publicUrl + `?t=${Date.now()}`; // bust cache
+
+      await db.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
+      setUser({ ...user, avatar_url: avatarUrl });
+      toast.success("Photo updated!");
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const downloadData = () => {
@@ -94,21 +110,21 @@ export default function ProfilePage() {
     );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = "az-meeting-data.json";
-    a.click();
+    a.href = url; a.download = "az-meeting-data.json"; a.click();
     URL.revokeObjectURL(url);
     toast.success("Data downloaded!");
   };
 
   const deleteAccount = async () => {
-    if (deleteConfirm !== "DELETE") { toast.error('Type DELETE to confirm'); return; }
+    if (deleteConfirm !== "DELETE") { toast.error("Type DELETE to confirm"); return; }
     try {
+      const supabase = createClient();
+      const db = supabase as any;
       if (user) await db.from("profiles").delete().eq("id", user.id);
       await supabase.auth.signOut();
       window.location.href = "/auth/login";
-    } catch {
-      toast.error("Failed to delete account");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to delete account");
     }
   };
 
@@ -122,20 +138,13 @@ export default function ProfilePage() {
         <Card className="p-6 flex flex-wrap items-center gap-5">
           <div className="relative flex-shrink-0">
             <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
+              ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif"
               className="hidden"
               onChange={(e) => { if (e.target.files?.[0]) uploadAvatar(e.target.files[0]); }}
             />
             {user?.avatar_url ? (
-              <NextImage
-                src={user.avatar_url}
-                alt="avatar"
-                width={80}
-                height={80}
-                className="w-20 h-20 rounded-full object-cover"
-              />
+              <NextImage src={user.avatar_url} alt="avatar" width={80} height={80}
+                className="w-20 h-20 rounded-full object-cover" unoptimized />
             ) : (
               <div className={cn("w-20 h-20 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-2xl font-black", color)}>
                 {initials}
@@ -143,9 +152,10 @@ export default function ProfilePage() {
             )}
             <button
               onClick={() => fileRef.current?.click()}
-              className="absolute bottom-0 right-0 w-7 h-7 rounded-full accent-gradient border-2 border-card flex items-center justify-center text-white text-xs hover:opacity-90 transition-opacity"
+              disabled={uploading}
+              className="absolute bottom-0 right-0 w-7 h-7 rounded-full accent-gradient border-2 border-card flex items-center justify-center text-white text-xs hover:opacity-90 transition-opacity disabled:opacity-60"
             >
-              <Edit size={11} />
+              {uploading ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Edit size={11} />}
             </button>
           </div>
           <div className="flex-1 min-w-0">
@@ -259,7 +269,7 @@ export default function ProfilePage() {
         <Modal title="Change password" onClose={() => setPwOpen(false)}>
           <div className="space-y-4">
             <Input label="New password" type="password" placeholder="Min 6 characters" value={pwForm.newPw} onChange={(e) => setPwForm((f) => ({ ...f, newPw: e.target.value }))} />
-            <Input label="Confirm new password" type="password" placeholder="Repeat password" value={pwForm.confirm} onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))} />
+            <Input label="Confirm password" type="password" placeholder="Repeat password" value={pwForm.confirm} onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))} />
             <div className="flex gap-3 pt-2">
               <Button onClick={changePassword} loading={saving}>Update password</Button>
               <Button variant="ghost" onClick={() => setPwOpen(false)}>Cancel</Button>
@@ -274,12 +284,7 @@ export default function ProfilePage() {
             <p className="text-sm text-muted-foreground leading-relaxed">
               This will permanently delete your account and all data. This cannot be undone.
             </p>
-            <Input
-              label="Type DELETE to confirm"
-              placeholder="DELETE"
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-            />
+            <Input label="Type DELETE to confirm" placeholder="DELETE" value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
             <div className="flex gap-3 pt-2">
               <Button variant="danger" onClick={deleteAccount} className="gap-2">
                 <Trash2 size={14} /> Permanently delete
@@ -295,21 +300,13 @@ export default function ProfilePage() {
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.94 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl"
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-foreground">{title}</h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground transition-colors text-sm"
-          >
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground text-sm">
             X
           </button>
         </div>

@@ -23,7 +23,6 @@ export default function LoginPage() {
   const [socialLoading, setSocialLoading] = useState<"google" | "github" | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // If already logged in, go to dashboard
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) router.replace("/dashboard");
@@ -44,18 +43,22 @@ export default function LoginPage() {
   };
 
   const ensureProfile = async (userId: string, userEmail: string, fullName: string | null) => {
-    const db = supabase as any;
-    const { data } = await db.from("profiles").select("id").eq("id", userId).maybeSingle();
-    if (!data) {
-      await db.from("profiles").insert({
-        id: userId,
-        email: userEmail,
-        full_name: fullName,
-        native_language: "en",
-        preferred_language: "en",
-        languages: ["en"],
-        plan: "free",
-      });
+    try {
+      const db = supabase as any;
+      const { data } = await db.from("profiles").select("id").eq("id", userId).maybeSingle();
+      if (!data) {
+        await db.from("profiles").insert({
+          id: userId,
+          email: userEmail,
+          full_name: fullName,
+          native_language: "en",
+          preferred_language: "en",
+          languages: ["en"],
+          plan: "free",
+        });
+      }
+    } catch (e) {
+      console.log("Profile check:", e);
     }
   };
 
@@ -73,25 +76,22 @@ export default function LoginPage() {
 
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
+          email, password,
           options: { data: { full_name: name } },
         });
         if (error) {
           toast.error(error.message);
         } else if (data.user) {
           await ensureProfile(data.user.id, email, name);
-          toast.success("Account created! Signing you in...");
-          // Auto sign in after signup
           const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
           if (!signInError) {
+            toast.success("Account created!");
             router.replace("/dashboard");
           } else {
             setMode("signin");
-            toast("Please sign in with your new account");
+            toast.success("Account created! Please sign in.");
           }
         }
-
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
@@ -111,23 +111,34 @@ export default function LoginPage() {
 
   const handleGoogle = async () => {
     setSocialLoading("google");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/api/auth/callback`,
-        queryParams: { access_type: "offline", prompt: "consent" },
-      },
-    });
-    if (error) { toast.error(error.message); setSocialLoading(null); }
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback`,
+        },
+      });
+      if (error) { toast.error(error.message); setSocialLoading(null); }
+    } catch (e: any) {
+      toast.error(e.message);
+      setSocialLoading(null);
+    }
   };
 
   const handleGithub = async () => {
     setSocialLoading("github");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: { redirectTo: `${window.location.origin}/api/auth/callback` },
-    });
-    if (error) { toast.error(error.message); setSocialLoading(null); }
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "github",
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback`,
+        },
+      });
+      if (error) { toast.error(error.message); setSocialLoading(null); }
+    } catch (e: any) {
+      toast.error(e.message);
+      setSocialLoading(null);
+    }
   };
 
   return (
@@ -144,9 +155,7 @@ export default function LoginPage() {
         className="bg-card border border-border rounded-3xl p-8 w-full max-w-[420px] shadow-xl relative z-10"
       >
         <div className="flex items-center gap-3 justify-center mb-8">
-          <div className="w-10 h-10 rounded-2xl accent-gradient flex items-center justify-center text-white font-black text-sm">
-            AZ
-          </div>
+          <div className="w-10 h-10 rounded-2xl accent-gradient flex items-center justify-center text-white font-black text-sm">AZ</div>
           <span className="font-black text-xl tracking-tight">
             <span className="accent-gradient-text">A-Z</span> Meeting
           </span>
@@ -156,10 +165,8 @@ export default function LoginPage() {
           {mode === "signin" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset password"}
         </h1>
         <p className="text-sm text-muted-foreground text-center mb-7">
-          {mode === "signin"
-            ? "Sign in to start multilingual meetings"
-            : mode === "signup"
-            ? "Free forever. No credit card needed."
+          {mode === "signin" ? "Sign in to start multilingual meetings"
+            : mode === "signup" ? "Free forever. No credit card needed."
             : "Enter your email and we will send a reset link"}
         </p>
 
@@ -208,49 +215,26 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {mode === "signup" && (
-            <Input
-              label="Full name"
-              placeholder="e.g. Arjun Kumar"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              error={errors.name}
-              icon={<User size={16} />}
-              autoComplete="name"
-            />
+            <Input label="Full name" placeholder="e.g. Arjun Kumar" value={name}
+              onChange={(e) => setName(e.target.value)} error={errors.name}
+              icon={<User size={16} />} autoComplete="name" />
           )}
-          <Input
-            label="Email address"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            error={errors.email}
-            icon={<Mail size={16} />}
-            autoComplete="email"
-          />
+          <Input label="Email address" type="email" placeholder="you@example.com"
+            value={email} onChange={(e) => setEmail(e.target.value)}
+            error={errors.email} icon={<Mail size={16} />} autoComplete="email" />
           {mode !== "forgot" && (
             <div className="relative">
-              <Input
-                label="Password"
-                type={showPw ? "text" : "password"}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={errors.password}
-                icon={<Lock size={16} />}
+              <Input label="Password" type={showPw ? "text" : "password"} placeholder="••••••••"
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                error={errors.password} icon={<Lock size={16} />}
                 autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPw(!showPw)}
-                className="absolute right-3 top-[34px] text-muted-foreground hover:text-foreground transition-colors"
-              >
+                className="pr-10" />
+              <button type="button" onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-[34px] text-muted-foreground hover:text-foreground">
                 {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           )}
-
           {mode === "signin" && (
             <div className="text-right">
               <button type="button" onClick={() => setMode("forgot")} className="text-xs text-accent hover:underline">
@@ -258,7 +242,6 @@ export default function LoginPage() {
               </button>
             </div>
           )}
-
           <Button type="submit" size="lg" loading={loading} className="w-full mt-2">
             {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
           </Button>
@@ -266,23 +249,15 @@ export default function LoginPage() {
 
         <p className="text-center text-xs text-muted-foreground mt-6">
           {mode === "signin" ? (
-            <>
-              No account?{" "}
-              <button onClick={() => setMode("signup")} className="text-accent font-semibold hover:underline">
-                Sign up free
-              </button>
+            <>No account?{" "}
+              <button onClick={() => setMode("signup")} className="text-accent font-semibold hover:underline">Sign up free</button>
             </>
           ) : mode === "signup" ? (
-            <>
-              Have an account?{" "}
-              <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">
-                Sign in
-              </button>
+            <>Have an account?{" "}
+              <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">Sign in</button>
             </>
           ) : (
-            <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">
-              Back to sign in
-            </button>
+            <button onClick={() => setMode("signin")} className="text-accent font-semibold hover:underline">Back to sign in</button>
           )}
         </p>
 
