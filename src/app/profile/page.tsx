@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import NextImage from "next/image";
-import { Edit, Plus, Download, Key, Trash2, Star, Globe, Bell, Settings } from "lucide-react";
+import { Edit, Plus, Download, Key, Trash2, Star, Globe, Bell, Settings, X, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/store/app";
 import { Button, Card, Input, StatCell, SwitchRow, Badge } from "@/components/ui";
@@ -15,23 +15,35 @@ import toast from "react-hot-toast";
 export default function ProfilePage() {
   const { user, setUser } = useAppStore();
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [pwOpen, setPwOpen] = useState(false);
+  const [editOpen, setEditOpen]   = useState(false);
+  const [pwOpen, setPwOpen]       = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [langOpen, setLangOpen]   = useState(false);
+
   const [form, setForm] = useState({
     full_name: user?.full_name ?? "",
-    email: user?.email ?? "",
+    email:     user?.email ?? "",
     job_title: user?.job_title ?? "",
   });
-  const [pwForm, setPwForm] = useState({ newPw: "", confirm: "" });
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [pwForm, setPwForm]           = useState({ newPw: "", confirm: "" });
+  const [saving, setSaving]           = useState(false);
+  const [uploading, setUploading]     = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+
+  // Language management state
+  const [userLanguages, setUserLanguages] = useState<string[]>(user?.languages ?? ["en"]);
+  const [langSearch, setLangSearch]       = useState("");
+
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [notifs, setNotifs] = useState({ reminders: true, translation: true, chat: true, recording: false, digest: true });
-  const [prefs, setPrefs] = useState({ autoJoinDubbing: true, joinCameraOff: false, hdDefault: true, bgBlur: false, aiSummary: true });
+  const [notifs, setNotifs] = useState({
+    reminders: true, translation: true, chat: true, recording: false, digest: true,
+  });
+  const [prefs, setPrefs] = useState({
+    autoJoinDubbing: true, joinCameraOff: false, hdDefault: true, bgBlur: false, aiSummary: true,
+  });
 
+  // ── Save profile ───────────────────────────────────────────────────────────
   const saveProfile = async () => {
     if (!user) return;
     setSaving(true);
@@ -53,6 +65,7 @@ export default function ProfilePage() {
     }
   };
 
+  // ── Change password ────────────────────────────────────────────────────────
   const changePassword = async () => {
     if (!pwForm.newPw || pwForm.newPw.length < 6) { toast.error("Min 6 characters"); return; }
     if (pwForm.newPw !== pwForm.confirm) { toast.error("Passwords do not match"); return; }
@@ -71,28 +84,23 @@ export default function ProfilePage() {
     }
   };
 
+  // ── Upload avatar ──────────────────────────────────────────────────────────
   const uploadAvatar = async (file: File) => {
     if (!user) return;
-    // Validate file
     if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return; }
-
     setUploading(true);
     try {
       const supabase = createClient();
       const db = supabase as any;
-      const ext = file.name.split(".").pop() ?? "jpg";
+      const ext  = file.name.split(".").pop() ?? "jpg";
       const path = `${user.id}/avatar.${ext}`;
-
       const { error: upErr } = await supabase.storage
         .from("avatars")
         .upload(path, file, { upsert: true, contentType: file.type });
-
       if (upErr) throw new Error(upErr.message);
-
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
-      const avatarUrl = urlData.publicUrl + `?t=${Date.now()}`; // bust cache
-
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
       await db.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
       setUser({ ...user, avatar_url: avatarUrl });
       toast.success("Photo updated!");
@@ -103,6 +111,37 @@ export default function ProfilePage() {
     }
   };
 
+  // ── Language management ────────────────────────────────────────────────────
+  const toggleLanguage = async (code: string) => {
+    if (!user) return;
+    let next: string[];
+    if (userLanguages.includes(code)) {
+      if (userLanguages.length === 1) { toast.error("You need at least one language"); return; }
+      next = userLanguages.filter((l) => l !== code);
+    } else {
+      next = [...userLanguages, code];
+    }
+    setUserLanguages(next);
+    // Save to DB
+    try {
+      const supabase = createClient();
+      const db = supabase as any;
+      await db.from("profiles").update({ languages: next }).eq("id", user.id);
+      setUser({ ...user, languages: next });
+      toast.success(userLanguages.includes(code) ? "Language removed" : "Language added!");
+    } catch {
+      // Revert on error
+      setUserLanguages(userLanguages);
+      toast.error("Failed to update languages");
+    }
+  };
+
+  const filteredLanguages = LANGUAGES.filter((l) =>
+    l.label.toLowerCase().includes(langSearch.toLowerCase()) ||
+    l.code.toLowerCase().includes(langSearch.toLowerCase())
+  );
+
+  // ── Download data ──────────────────────────────────────────────────────────
   const downloadData = () => {
     const blob = new Blob(
       [JSON.stringify({ user, exported_at: new Date().toISOString() }, null, 2)],
@@ -115,6 +154,7 @@ export default function ProfilePage() {
     toast.success("Data downloaded!");
   };
 
+  // ── Delete account ─────────────────────────────────────────────────────────
   const deleteAccount = async () => {
     if (deleteConfirm !== "DELETE") { toast.error("Type DELETE to confirm"); return; }
     try {
@@ -129,12 +169,13 @@ export default function ProfilePage() {
   };
 
   const initials = getInitials(user?.full_name);
-  const color = avatarColor(user?.full_name || user?.email || "user");
+  const color    = avatarColor(user?.full_name || user?.email || "user");
 
   return (
     <div className="min-h-screen bg-background px-6 py-8 max-w-4xl mx-auto">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
 
+        {/* Header */}
         <Card className="p-6 flex flex-wrap items-center gap-5">
           <div className="relative flex-shrink-0">
             <input
@@ -155,7 +196,9 @@ export default function ProfilePage() {
               disabled={uploading}
               className="absolute bottom-0 right-0 w-7 h-7 rounded-full accent-gradient border-2 border-card flex items-center justify-center text-white text-xs hover:opacity-90 transition-opacity disabled:opacity-60"
             >
-              {uploading ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Edit size={11} />}
+              {uploading
+                ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <Edit size={11} />}
             </button>
           </div>
           <div className="flex-1 min-w-0">
@@ -163,7 +206,9 @@ export default function ProfilePage() {
             <div className="text-sm text-muted-foreground mt-0.5">{user?.email}</div>
             {user?.job_title && <div className="text-xs text-muted-foreground mt-0.5">{user.job_title}</div>}
             <div className="mt-2">
-              <Badge variant="accent"><Star size={9} /> {user?.plan === "pro" ? "Pro plan" : "Free plan"}</Badge>
+              <Badge variant="accent">
+                <Star size={9} /> {user?.plan === "pro" ? "Pro plan" : "Free plan"}
+              </Badge>
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -176,36 +221,54 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCell value={user?.total_meetings ?? 0} label="Meetings" />
-          <StatCell value={user?.languages?.length ?? 1} label="Languages" />
+          <StatCell value={userLanguages.length} label="Languages" />
           <StatCell value={`${Math.round((user?.total_minutes ?? 0) / 60)}h`} label="Hours" />
           <StatCell value={`${((user?.total_words_translated ?? 0) / 1000).toFixed(0)}k`} label="Words translated" />
         </div>
 
         <div className="grid md:grid-cols-2 gap-5">
+          {/* Language preferences */}
           <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Globe size={15} className="text-accent" />
-              <span className="font-bold text-sm text-foreground">Language preferences</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Globe size={15} className="text-accent" />
+                <span className="font-bold text-sm text-foreground">Language preferences</span>
+              </div>
+              <span className="text-xs text-muted-foreground">{userLanguages.length} active</span>
             </div>
             <div className="space-y-2">
-              {(user?.languages ?? ["en"]).map((lang) => {
+              {userLanguages.map((lang) => {
                 const l = LANGUAGES.find((x) => x.code === lang);
                 return (
-                  <div key={lang} className="flex items-center gap-3 px-3 py-2.5 bg-muted rounded-xl border border-border">
+                  <div key={lang} className="flex items-center gap-3 px-3 py-2.5 bg-muted rounded-xl border border-border group">
                     <span className="text-base">{l?.flag ?? "🌐"}</span>
                     <span className="flex-1 text-sm text-foreground">{l?.label ?? lang}</span>
                     <Badge variant="green">Active</Badge>
+                    {userLanguages.length > 1 && (
+                      <button
+                        onClick={() => toggleLanguage(lang)}
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500 transition-all ml-1"
+                        title="Remove language"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 );
               })}
-              <button className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-dashed border-border rounded-xl text-sm text-muted-foreground hover:border-accent hover:text-accent transition-all">
+              <button
+                onClick={() => setLangOpen(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-dashed border-border rounded-xl text-sm text-muted-foreground hover:border-accent hover:text-accent transition-all"
+              >
                 <Plus size={14} /> Add language
               </button>
             </div>
           </Card>
 
+          {/* Notifications */}
           <Card className="p-5">
             <div className="flex items-center gap-2 mb-4">
               <Bell size={15} className="text-accent" />
@@ -220,6 +283,7 @@ export default function ProfilePage() {
             </div>
           </Card>
 
+          {/* Preferences */}
           <Card className="p-5">
             <div className="flex items-center gap-2 mb-4">
               <Settings size={15} className="text-accent" />
@@ -234,6 +298,7 @@ export default function ProfilePage() {
             </div>
           </Card>
 
+          {/* Account */}
           <Card className="p-5">
             <div className="font-bold text-sm text-foreground mb-4">Account</div>
             <div className="space-y-2">
@@ -251,6 +316,7 @@ export default function ProfilePage() {
         </div>
       </motion.div>
 
+      {/* ── Edit profile modal ── */}
       {editOpen && (
         <Modal title="Edit profile" onClose={() => setEditOpen(false)}>
           <div className="space-y-4">
@@ -265,6 +331,7 @@ export default function ProfilePage() {
         </Modal>
       )}
 
+      {/* ── Change password modal ── */}
       {pwOpen && (
         <Modal title="Change password" onClose={() => setPwOpen(false)}>
           <div className="space-y-4">
@@ -278,6 +345,7 @@ export default function ProfilePage() {
         </Modal>
       )}
 
+      {/* ── Delete account modal ── */}
       {deleteOpen && (
         <Modal title="Delete account" onClose={() => setDeleteOpen(false)}>
           <div className="space-y-4">
@@ -294,20 +362,91 @@ export default function ProfilePage() {
           </div>
         </Modal>
       )}
+
+      {/* ── Add language modal ── */}
+      <AnimatePresence>
+        {langOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={(e) => e.target === e.currentTarget && setLangOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-foreground">Manage languages</h2>
+                <button onClick={() => setLangOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground">
+                  <X size={14} />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Select all languages you speak or want to support. Click to add or remove.
+              </p>
+              {/* Search */}
+              <input
+                className="input-base mb-4 text-sm"
+                placeholder="Search languages..."
+                value={langSearch}
+                onChange={(e) => setLangSearch(e.target.value)}
+                autoFocus
+              />
+              {/* Language grid */}
+              <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                {filteredLanguages.map((l) => {
+                  const active = userLanguages.includes(l.code);
+                  return (
+                    <button
+                      key={l.code}
+                      onClick={() => toggleLanguage(l.code)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left",
+                        active
+                          ? "bg-accent/10 border-accent/30 text-accent"
+                          : "bg-muted border-border text-muted-foreground hover:text-foreground hover:border-accent/30"
+                      )}
+                    >
+                      <span className="text-base flex-shrink-0">{l.flag}</span>
+                      <span className="flex-1 text-xs truncate">{l.label}</span>
+                      {active && <Check size={13} className="flex-shrink-0" />}
+                    </button>
+                  );
+                })}
+                {filteredLanguages.length === 0 && (
+                  <div className="col-span-2 text-center py-6 text-sm text-muted-foreground">
+                    No languages found for "{langSearch}"
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{userLanguages.length} languages selected</span>
+                <Button onClick={() => setLangOpen(false)}>Done</Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl"
+      >
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-foreground">{title}</h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground text-sm">
-            X
+            <X size={14} />
           </button>
         </div>
         {children}

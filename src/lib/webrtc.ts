@@ -1,18 +1,14 @@
-// ─── WebRTC + Supabase Realtime Signaling ────────────────────────────────────
+// WebRTC + Supabase Realtime Signaling
 // Uses Supabase Realtime as the signaling channel for WebRTC peer connections.
-// Each participant broadcasts their presence, offers, answers, and ICE candidates
-// through a shared Realtime channel keyed by the meeting room code.
 
 import { createClient } from "@/lib/supabase/client";
 import { RealtimeChannel } from "@supabase/supabase-js";
 
-// Free STUN servers — work globally, no setup needed
 export const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
   { urls: "stun:stun.cloudflare.com:3478" },
-  // Free TURN server for when STUN alone fails (NAT traversal)
   {
     urls: "turn:openrelay.metered.ca:80",
     username: "openrelayproject",
@@ -23,27 +19,32 @@ export const ICE_SERVERS: RTCIceServer[] = [
     username: "openrelayproject",
     credential: "openrelayproject",
   },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 export type SignalMessage =
-  | { type: "join";    peerId: string; name: string; language: string }
-  | { type: "leave";   peerId: string }
-  | { type: "offer";   peerId: string; targetId: string; sdp: RTCSessionDescriptionInit }
-  | { type: "answer";  peerId: string; targetId: string; sdp: RTCSessionDescriptionInit }
-  | { type: "ice";     peerId: string; targetId: string; candidate: RTCIceCandidateInit }
-  | { type: "mute";    peerId: string; mic: boolean; cam: boolean }
-  | { type: "hand";    peerId: string; raised: boolean }
-  | { type: "chat";    peerId: string; name: string; text: string; lang: string };
+  | { type: "join";   peerId: string; name: string; language: string }
+  | { type: "leave";  peerId: string }
+  | { type: "offer";  peerId: string; targetId: string; sdp: RTCSessionDescriptionInit }
+  | { type: "answer"; peerId: string; targetId: string; sdp: RTCSessionDescriptionInit }
+  | { type: "ice";    peerId: string; targetId: string; candidate: RTCIceCandidateInit }
+  | { type: "mute";   peerId: string; mic: boolean; cam: boolean }
+  | { type: "hand";   peerId: string; raised: boolean }
+  | { type: "chat";   peerId: string; name: string; text: string; lang: string };
 
 export interface RemotePeer {
-  peerId:    string;
-  name:      string;
-  language:  string;
-  stream:    MediaStream | null;
-  micOn:     boolean;
-  camOn:     boolean;
+  peerId:     string;
+  name:       string;
+  language:   string;
+  stream:     MediaStream | null;
+  micOn:      boolean;
+  camOn:      boolean;
   handRaised: boolean;
-  pc:        RTCPeerConnection | null;
+  pc:         RTCPeerConnection | null;
 }
 
 type PeerUpdateFn = (peers: Map<string, RemotePeer>) => void;
@@ -60,53 +61,49 @@ export class RoomSession {
   private onPeersUpdate: PeerUpdateFn;
   private onChat: ChatFn;
   private supabase = createClient();
-  // Track which peer pairs we've already initiated an offer from to avoid duplicates
   private offeredTo = new Set<string>();
+  private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
 
   constructor(opts: {
-    peerId: string;
-    name: string;
-    language: string;
-    roomCode: string;
-    onPeersUpdate: PeerUpdateFn;
-    onChat: ChatFn;
+    peerId: string; name: string; language: string; roomCode: string;
+    onPeersUpdate: PeerUpdateFn; onChat: ChatFn;
   }) {
-    this.peerId       = opts.peerId;
-    this.name         = opts.name;
-    this.language     = opts.language;
-    this.roomCode     = opts.roomCode;
+    this.peerId        = opts.peerId;
+    this.name          = opts.name;
+    this.language      = opts.language;
+    this.roomCode      = opts.roomCode;
     this.onPeersUpdate = opts.onPeersUpdate;
-    this.onChat       = opts.onChat;
+    this.onChat        = opts.onChat;
   }
 
-  // ── Join the room ──────────────────────────────────────────────────────────
   async join(localStream: MediaStream) {
     this.localStream = localStream;
-
     const channelName = `room:${this.roomCode.replace(/[^A-Z0-9]/g, "")}`;
 
     this.channel = this.supabase.channel(channelName, {
-      config: { broadcast: { self: false } },
+      config: { broadcast: { self: false, ack: false } },
     });
 
     this.channel
       .on("broadcast", { event: "signal" }, ({ payload }: { payload: SignalMessage }) => {
-        this.handleSignal(payload);
+        this.handleSignal(payload).catch(console.error);
       })
-      .subscribe((status) => {
+      .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          // Announce our presence — existing members will send us offers
+          // Small delay to ensure channel is ready before announcing
+          await new Promise((r) => setTimeout(r, 300));
           this.broadcast({ type: "join", peerId: this.peerId, name: this.name, language: this.language });
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("Realtime channel error:", status);
         }
       });
   }
 
-  // ── Handle incoming signals ────────────────────────────────────────────────
   private async handleSignal(msg: SignalMessage) {
     switch (msg.type) {
       case "join": {
         if (msg.peerId === this.peerId) return;
-        // Create peer entry
         if (!this.peers.has(msg.peerId)) {
           this.peers.set(msg.peerId, {
             peerId: msg.peerId, name: msg.name, language: msg.language,
@@ -114,10 +111,21 @@ export class RoomSession {
           });
           this.notifyUpdate();
         }
-        // Existing member initiates offer to the newcomer (avoid both sides offering)
-        if (!this.offeredTo.has(msg.peerId)) {
+        // Only the peer with the lexicographically larger ID initiates the offer
+        // This prevents both sides offering simultaneously
+        if (this.peerId > msg.peerId && !this.offeredTo.has(msg.peerId)) {
           this.offeredTo.add(msg.peerId);
           await this.createOffer(msg.peerId);
+        } else if (this.peerId < msg.peerId) {
+          // We are the lower-ID peer — we will receive an offer, do nothing
+          // But if we don't get one in 3s, we send one ourselves
+          setTimeout(async () => {
+            const peer = this.peers.get(msg.peerId);
+            if (peer && !peer.pc && !this.offeredTo.has(msg.peerId)) {
+              this.offeredTo.add(msg.peerId);
+              await this.createOffer(msg.peerId);
+            }
+          }, 3000);
         }
         break;
       }
@@ -125,6 +133,7 @@ export class RoomSession {
         this.closePeer(msg.peerId);
         this.peers.delete(msg.peerId);
         this.offeredTo.delete(msg.peerId);
+        this.pendingCandidates.delete(msg.peerId);
         this.notifyUpdate();
         break;
       }
@@ -160,72 +169,77 @@ export class RoomSession {
     }
   }
 
-  // ── Create a peer connection ───────────────────────────────────────────────
   private createPeerConnection(peerId: string): RTCPeerConnection {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, iceCandidatePoolSize: 10 });
 
-    // Add our local tracks to the connection
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {
         pc.addTrack(track, this.localStream!);
       });
     }
 
-    // When we get remote tracks, attach to the peer's stream
     pc.ontrack = (event) => {
       const peer = this.peers.get(peerId);
       if (!peer) return;
       if (!peer.stream) {
         peer.stream = new MediaStream();
-        this.peers.set(peerId, peer);
       }
-      peer.stream.addTrack(event.track);
+      // Only add the track if it's not already there
+      const existingIds = peer.stream.getTracks().map((t) => t.id);
+      if (!existingIds.includes(event.track.id)) {
+        peer.stream.addTrack(event.track);
+      }
+      this.peers.set(peerId, peer);
       this.notifyUpdate();
     };
 
-    // Send ICE candidates to the remote peer via signaling
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.broadcast({
-          type: "ice",
-          peerId: this.peerId,
-          targetId: peerId,
+          type: "ice", peerId: this.peerId, targetId: peerId,
           candidate: event.candidate.toJSON(),
         });
       }
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-        // Attempt ICE restart
-        if (pc.signalingState === "stable") {
-          pc.restartIce();
-        }
+      console.log(`[WebRTC] ${peerId} connection state:`, pc.connectionState);
+      if (pc.connectionState === "failed") {
+        pc.restartIce();
       }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC] ${peerId} ICE state:`, pc.iceConnectionState);
     };
 
     return pc;
   }
 
-  // ── Offer (caller side) ───────────────────────────────────────────────────
   private async createOffer(peerId: string) {
     const pc = this.createPeerConnection(peerId);
     const peer = this.peers.get(peerId);
     if (peer) { peer.pc = pc; this.peers.set(peerId, peer); }
 
-    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
     await pc.setLocalDescription(offer);
 
     this.broadcast({
-      type: "offer",
-      peerId: this.peerId,
-      targetId: peerId,
+      type: "offer", peerId: this.peerId, targetId: peerId,
       sdp: pc.localDescription!,
     });
   }
 
-  // ── Answer (callee side) ──────────────────────────────────────────────────
   private async handleOffer(peerId: string, sdp: RTCSessionDescriptionInit) {
+    // Close any existing connection to this peer before creating a new one
+    const existing = this.peers.get(peerId);
+    if (existing?.pc) {
+      existing.pc.close();
+    }
+
     if (!this.peers.has(peerId)) {
       this.peers.set(peerId, {
         peerId, name: "Connecting…", language: "en",
@@ -239,13 +253,19 @@ export class RoomSession {
     this.peers.set(peerId, peer);
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Flush any pending ICE candidates
+    const pending = this.pendingCandidates.get(peerId) ?? [];
+    for (const c of pending) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+    }
+    this.pendingCandidates.delete(peerId);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
     this.broadcast({
-      type: "answer",
-      peerId: this.peerId,
-      targetId: peerId,
+      type: "answer", peerId: this.peerId, targetId: peerId,
       sdp: pc.localDescription!,
     });
   }
@@ -255,19 +275,40 @@ export class RoomSession {
     if (!peer?.pc) return;
     if (peer.pc.signalingState !== "have-local-offer") return;
     await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Flush pending ICE
+    const pending = this.pendingCandidates.get(peerId) ?? [];
+    for (const c of pending) {
+      try { await peer.pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+    }
+    this.pendingCandidates.delete(peerId);
   }
 
   private async handleIce(peerId: string, candidate: RTCIceCandidateInit) {
     const peer = this.peers.get(peerId);
-    if (!peer?.pc) return;
+    if (!peer?.pc) {
+      // Queue it — the peer connection may not be ready yet
+      if (!this.pendingCandidates.has(peerId)) {
+        this.pendingCandidates.set(peerId, []);
+      }
+      this.pendingCandidates.get(peerId)!.push(candidate);
+      return;
+    }
     try {
-      await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch {
-      // Ignore — may arrive before remote desc is set
+      if (peer.pc.remoteDescription) {
+        await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        // Queue if remote description not set yet
+        if (!this.pendingCandidates.has(peerId)) {
+          this.pendingCandidates.set(peerId, []);
+        }
+        this.pendingCandidates.get(peerId)!.push(candidate);
+      }
+    } catch (e) {
+      console.warn("ICE candidate error:", e);
     }
   }
 
-  // ── Broadcast helpers ─────────────────────────────────────────────────────
   broadcast(msg: SignalMessage) {
     this.channel?.send({ type: "broadcast", event: "signal", payload: msg });
   }
@@ -284,7 +325,6 @@ export class RoomSession {
     this.broadcast({ type: "chat", peerId: this.peerId, name: this.name, text, lang });
   }
 
-  // ── Update local stream (e.g. after quality change) ───────────────────────
   updateLocalStream(newStream: MediaStream) {
     this.localStream = newStream;
     this.peers.forEach((peer) => {
@@ -298,7 +338,6 @@ export class RoomSession {
     });
   }
 
-  // ── Clean up ──────────────────────────────────────────────────────────────
   private closePeer(peerId: string) {
     const peer = this.peers.get(peerId);
     if (!peer) return;
@@ -312,6 +351,7 @@ export class RoomSession {
     this.peers.clear();
     this.channel?.unsubscribe();
     this.channel = null;
+    this.localStream?.getTracks().forEach((t) => t.stop());
     this.notifyUpdate();
   }
 
